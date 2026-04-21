@@ -1,0 +1,22 @@
+# 💰 App de Finanzas Personales
+
+Aplicación para gestionar ingresos y gastos.
+
+## 🚀 Funcionalidades
+
+- Agregar movimientos
+- Editar y eliminar
+- Categorías
+- Balance automático
+- Persistencia con localStorage
+- Gráfico de gastos
+
+## 🛠️ Tecnologías
+
+- React
+- Vite
+- Chart.js
+
+## 📌 Autor
+
+Jonathan Caruso
