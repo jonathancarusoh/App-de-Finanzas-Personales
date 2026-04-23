@@ -11,12 +11,12 @@ const handleSubmit = (e) => {
 
     if (!texto || !monto) return;
 
-    agregarMovimiento({
-      id: Date.now(),
-      texto,
-      monto: Number(monto),
-      tipo,
-    });
+ agregarMovimiento({
+  texto,
+  monto: Number(monto),
+  tipo,
+  categoria
+});
 
     setTexto("");
     setMonto("");

@@ -8,6 +8,7 @@ import Login from "./components/LoginComponent";
 function App() {
   const [movimientos, setMovimientos] = useState([]);
   const [isAuth, setIsAuth] = useState(false);
+  const [loading, setLoading] = useState(false); // 🔥 loading
 
   // 🔥 detectar login
   useEffect(() => {
@@ -21,16 +22,28 @@ function App() {
   useEffect(() => {
     const fetchGastos = async () => {
       try {
+        setLoading(true);
+
         const res = await fetch("http://localhost:3000/gastos", {
-          headers: {
-            Authorization: localStorage.getItem("token")
-          }
+        headers: {
+  Authorization: `Bearer ${localStorage.getItem("token")}`
+}
         });
+
+        // 🔥 manejo de error
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "Error al cargar gastos");
+        }
 
         const data = await res.json();
         setMovimientos(data);
+
       } catch (err) {
         console.error("Error cargando gastos", err);
+        alert(err.message);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -39,103 +52,116 @@ function App() {
     }
   }, [isAuth]);
 
-  // 🔥 AGREGAR (AHORA CON BACKEND)
- const agregarMovimiento = async (mov) => {
-  try {
-    const res = await fetch("http://localhost:3000/gastos", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: localStorage.getItem("token")
-      },
-      body: JSON.stringify(mov)
-    });
+  // 🔥 AGREGAR
+  const agregarMovimiento = async (mov) => {
+    try {
+      const res = await fetch("http://localhost:3000/gastos", {
+        method: "POST",
+        headers: {
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${localStorage.getItem("token")}`
+},
+        body: JSON.stringify(mov)
+      });
 
-    // 🔥 manejo de error real
-    if (!res.ok) {
-      const errorData = await res.json();
-      throw new Error(errorData.error || "Error al guardar");
-    }
-
-    const data = await res.json();
-
-    setMovimientos(prev => [data, ...prev]);
-
-  } catch (err) {
-    console.error(err);
-    alert(err.message);
-  }
-};
-
-const eliminarMovimiento = async (id) => {
-  try {
-    const res = await fetch(`http://localhost:3000/gastos/${id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: localStorage.getItem("token")
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Error al guardar");
       }
-    });
 
-    if (!res.ok) {
-      throw new Error("Error al eliminar");
+      const data = await res.json();
+
+      setMovimientos(prev => [data, ...prev]);
+
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
     }
+  };
 
-    setMovimientos(prev => prev.filter(m => m.id !== id));
+  // 🔥 ELIMINAR
+  const eliminarMovimiento = async (id) => {
+    try {
+      const res = await fetch(`http://localhost:3000/gastos/${id}`, {
+        method: "DELETE",
+       headers: {
+  Authorization: `Bearer ${localStorage.getItem("token")}`
+}
+      });
 
-  } catch (err) {
-    console.error(err);
-    alert(err.message);
-  }
-};
+      if (!res.ok) {
+        throw new Error("Error al eliminar");
+      }
 
-const editarMovimiento = async (movEditado) => {
-  try {
-    const res = await fetch(`http://localhost:3000/gastos/${movEditado.id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: localStorage.getItem("token")
-      },
-      body: JSON.stringify(movEditado)
-    });
+      setMovimientos(prev => prev.filter(m => m.id !== id));
 
-    if (!res.ok) {
-      throw new Error("Error al editar");
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
     }
+  };
 
-    const data = await res.json();
+  // 🔥 EDITAR
+  const editarMovimiento = async (movEditado) => {
+    try {
+      const res = await fetch(`http://localhost:3000/gastos/${movEditado.id}`, {
+        method: "PUT",
+       headers: {
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${localStorage.getItem("token")}`
+},
+        body: JSON.stringify(movEditado)
+      });
 
-    setMovimientos(prev =>
-      prev.map(m => m.id === data.id ? data : m)
-    );
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Error al editar");
+      }
 
-  } catch (err) {
-    console.error(err);
-    alert(err.message);
-  }
-};
+      const data = await res.json();
+
+      setMovimientos(prev =>
+        prev.map(m => (m.id === data.id ? data : m))
+      );
+
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
 
   if (!isAuth) {
     return <Login setIsAuth={setIsAuth} />;
   }
 
-  return (
-    <div className="container">
-      <h1>Control de Gastos</h1>
+  const logout = () => {
+  localStorage.removeItem("token");
+  setIsAuth(false);
+};
 
-      <Resumen movimientos={movimientos} />
+return (
+  <div className="container">
+    <h1>Control de Gastos</h1>
 
-      <Formulario agregarMovimiento={agregarMovimiento} />
+  <button onClick={logout}>Cerrar sesión</button>
+    
+    {loading ? (
+      <p>Cargando...</p>
+    ) : (
+      <>
+        <Resumen movimientos={movimientos} />
+        <Formulario agregarMovimiento={agregarMovimiento} />
+        <ListaMovimientos
+          movimientos={movimientos}
+          eliminarMovimiento={eliminarMovimiento}
+          editarMovimiento={editarMovimiento}
+        />
+        <Grafico movimientos={movimientos} />
+      </>
+    )}
 
-      <ListaMovimientos
-        movimientos={movimientos}
-        eliminarMovimiento={eliminarMovimiento}
-        editarMovimiento={editarMovimiento}
-      />
-
-      <Grafico movimientos={movimientos} />
-    </div>
-  );
+  </div>
+);
 }
 
 export default App;

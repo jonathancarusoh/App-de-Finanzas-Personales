@@ -1,25 +1,32 @@
 import { useState } from "react";
 
-export default function Login() {
+export default function Login({ setIsAuth }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const handleLogin = async () => {
-    const res = await fetch("http://localhost:3000/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ email, password })
-    });
+    try {
+      const res = await fetch("http://localhost:3000/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email, password })
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (data.token) {
+      if (!res.ok) {
+        throw new Error(data.error || "Error al loguear");
+      }
+
       localStorage.setItem("token", data.token);
-      alert("Login exitoso 🔥");
-    } else {
-      alert(data.error);
+
+      // 🔥 ESTA ES LA CLAVE
+      setIsAuth(true);
+
+    } catch (err) {
+      alert(err.message);
     }
   };
 
