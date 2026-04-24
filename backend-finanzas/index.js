@@ -4,6 +4,11 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const mongoose = require("mongoose");
+
+mongoose.connect("mongodb://127.0.0.1:27017/finanzas")
+  .then(() => console.log("🟢 MongoDB conectado"))
+  .catch(err => console.log("🔴 Error MongoDB", err));
 
 const app = express();
 app.use(cors());
@@ -11,9 +16,8 @@ app.use(express.json());
 
 const SECRET = process.env.JWT_SECRET;
 
-// 🧠 fake DB
-let users = [];
-let gastos = [];
+const User = require("./models/User");
+const Gasto = require("./models/Gasto");
 
 // 🔐 MIDDLEWARE AUTH
 function auth(req, res, next) {
@@ -51,14 +55,13 @@ app.post("/register", async (req, res) => {
     return res.status(400).json({ error: "Faltan datos" });
   }
 
-  const existe = users.find(u => u.email === email);
-  if (existe) {
-    return res.status(400).json({ error: "Usuario ya existe" });
-  }
+  const existe = await User.findOne({ email });
+  if (existe) return res.status(400).json({ error: "Usuario ya existe" });
 
   const hash = await bcrypt.hash(password, 10);
 
-  users.push({ email, password: hash });
+  const user = new User({ email, password: hash });
+  await user.save();
 
   res.json({ message: "Usuario creado" });
 });
@@ -67,15 +70,11 @@ app.post("/register", async (req, res) => {
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  const user = users.find(u => u.email === email);
-  if (!user) {
-    return res.status(400).json({ error: "Usuario no existe" });
-  }
+  const user = await User.findOne({ email });
+  if (!user) return res.status(400).json({ error: "Usuario no existe" });
 
   const ok = await bcrypt.compare(password, user.password);
-  if (!ok) {
-    return res.status(400).json({ error: "Password incorrecta" });
-  }
+  if (!ok) return res.status(400).json({ error: "Password incorrecta" });
 
   const token = jwt.sign({ email }, SECRET, { expiresIn: "1h" });
 
@@ -87,99 +86,107 @@ app.post("/login", async (req, res) => {
 // =====================
 
 // GET
-app.get("/gastos", auth, (req, res) => {
-  const userGastos = gastos.filter(g => g.email === req.user.email);
-  res.json(userGastos);
+app.get("/gastos", auth, async (req, res) => {
+  try {
+    const userGastos = await Gasto.find({
+      email: req.user.email
+    });
+
+    res.json(userGastos);
+
+  } catch {
+    res.status(500).json({ error: "Error al obtener gastos" });
+  }
 });
-
 // POST
-app.post("/gastos", auth, (req, res) => {
-  const { texto, monto, tipo, categoria } = req.body;
+app.post("/gastos", auth, async (req, res) => {
+  try {
+    const { texto, monto, tipo, categoria } = req.body;
 
-  // 🔥 VALIDACIONES PRO
-  if (!texto || texto.trim() === "") {
-    return res.status(400).json({ error: "Texto requerido" });
+    // 🔥 VALIDACIONES (NO LAS BORRES)
+    if (!texto || texto.trim() === "") {
+      return res.status(400).json({ error: "Texto requerido" });
+    }
+
+    if (typeof monto !== "number" || isNaN(monto)) {
+      return res.status(400).json({ error: "Monto inválido" });
+    }
+
+    if (tipo !== "gasto" && tipo !== "ingreso") {
+      return res.status(400).json({ error: "Tipo inválido" });
+    }
+
+    const nuevo = new Gasto({
+      texto,
+      monto,
+      tipo,
+      categoria,
+      email: req.user.email
+    });
+
+    await nuevo.save();
+
+    res.json(nuevo);
+
+  } catch (err) {
+    res.status(500).json({ error: "Error creando gasto" });
   }
-
-  if (typeof monto !== "number" || isNaN(monto)) {
-    return res.status(400).json({ error: "Monto debe ser un número válido" });
-  }
-
-  if (tipo !== "gasto" && tipo !== "ingreso") {
-    return res.status(400).json({ error: "Tipo inválido" });
-  }
-
-  // opcional
-  if (!categoria) {
-    return res.status(400).json({ error: "Categoría requerida" });
-  }
-
-  const nuevo = {
-    id: Date.now(),
-    texto,
-    monto,
-    tipo,
-    categoria,
-    email: req.user.email
-  };
-
-  gastos.push(nuevo);
-
-  res.json(nuevo);
 });
 
 // DELETE
-app.delete("/gastos/:id", auth, (req, res) => {
-  const id = req.params.id;
+app.delete("/gastos/:id", auth, async (req, res) => {
+  try {
+    const eliminado = await Gasto.findOneAndDelete({
+      _id: req.params.id,
+      email: req.user.email
+    });
 
-  const antes = gastos.length;
+    if (!eliminado) {
+      return res.status(404).json({ error: "No encontrado" });
+    }
 
-  gastos = gastos.filter(
-    g => !(g.id == id && g.email === req.user.email)
-  );
+    res.json({ ok: true });
 
-  if (gastos.length === antes) {
-    return res.status(404).json({ error: "No encontrado o no autorizado" });
+  } catch {
+    res.status(500).json({ error: "Error al eliminar" });
   }
-
-  res.json({ ok: true });
 });
 // PUT (EDITAR)
-app.put("/gastos/:id", auth, (req, res) => {
-  const id = req.params.id;
+app.put("/gastos/:id", auth, async (req, res) => {
+  try {
+    const { texto, monto, tipo, categoria } = req.body;
 
-  // 🔥 VALIDACIÓN
-  if (req.body.monto && typeof req.body.monto !== "number") {
-    return res.status(400).json({ error: "Monto inválido" });
-  }
-
-  if (req.body.texto && req.body.texto.trim() === "") {
-    return res.status(400).json({ error: "Texto inválido" });
-  }
-
-  if (
-    req.body.tipo &&
-    req.body.tipo !== "gasto" &&
-    req.body.tipo !== "ingreso"
-  ) {
-    return res.status(400).json({ error: "Tipo inválido" });
-  }
-
-  let actualizado;
-
-  gastos = gastos.map(g => {
-    if (g.id == id && g.email === req.user.email) {
-      actualizado = { ...g, ...req.body };
-      return actualizado;
+    // 🔥 VALIDACIONES
+    if (monto && typeof monto !== "number") {
+      return res.status(400).json({ error: "Monto inválido" });
     }
-    return g;
-  });
 
-  if (!actualizado) {
-    return res.status(404).json({ error: "Gasto no encontrado" });
+    if (texto && texto.trim() === "") {
+      return res.status(400).json({ error: "Texto inválido" });
+    }
+
+    if (tipo && tipo !== "gasto" && tipo !== "ingreso") {
+      return res.status(400).json({ error: "Tipo inválido" });
+    }
+
+    const actualizado = await Gasto.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        email: req.user.email
+      },
+      { texto, monto, tipo, categoria },
+      { new: true }
+    );
+
+    if (!actualizado) {
+      return res.status(404).json({ error: "No encontrado" });
+    }
+
+    res.json(actualizado);
+
+  } catch {
+    res.status(500).json({ error: "Error al editar" });
   }
-
-  res.json(actualizado);
 });
 // =====================
 
